@@ -38,6 +38,16 @@ client.on("qr", (qr) => {
   qrcode.generate(qr, { small: true }); // Lo dejamos en la terminal de Render por si acaso
 });
 
+client.on("loading_screen", (percent, message) => {
+  console.log(`⏳ Sincronizando WhatsApp: ${percent}% - ${message}`);
+  botStatus = `Sincronizando chats: ${percent}% completado...`;
+});
+
+client.on("disconnected", (reason) => {
+  console.error("❌ El bot se ha desconectado o Chrome ha muerto. Razón:", reason);
+  botStatus = "Error: Desconectado por falta de memoria.";
+});
+
 client.on("authenticated", () => {
   currentQR = "";
   botStatus = "¡Autenticado y conectado a WhatsApp!";
