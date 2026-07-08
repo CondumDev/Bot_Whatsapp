@@ -143,38 +143,53 @@ client.initialize()
   .catch(err => console.error("❌ Error crítico:", err));
 
 
-// --- SERVIDOR WEB MEJORADO (Tu página web para el QR) ---
+// --- SERVIDOR WEB MEJORADO CON CÁMARA DE SEGURIDAD ---
 const http = require('http');
 const port = process.env.PORT || 10000;
 
-http.createServer((req, res) => {
-  res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-  
+http.createServer(async (req, res) => {
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+
+  // 📸 RUTA SECRETA PARA VER LA PANTALLA DE CHROME
+  if (req.url === '/foto') {
+    try {
+      if (client && client.pupPage) {
+        // Tomamos una captura de pantalla de Chrome en la nube
+        const screenshot = await client.pupPage.screenshot({ encoding: 'base64' });
+        res.writeHead(200);
+        res.end(`
+          <body style="text-align: center; font-family: Arial; background: #222; color: white;">
+            <h2>📸 Cámara Espía de Chrome</h2>
+            <p>Esto es EXACTAMENTE lo que está viendo el bot ahora mismo. F5 para actualizar.</p>
+            <img src="data:image/png;base64,${screenshot}" style="max-width: 90%; border: 2px solid #25D366; border-radius: 10px;"/>
+          </body>
+        `);
+      } else {
+        res.writeHead(200);
+        res.end('Chrome todavía no ha arrancado o se ha cerrado.');
+      }
+    } catch (error) {
+      res.writeHead(500);
+      res.end('Error al tomar la foto: ' + error.message);
+    }
+    return;
+  }
+
+  // 🌐 RUTA NORMAL (Para ver el QR)
+  res.writeHead(200);
   if (currentQR) {
-    // Si hay un QR listo, lo convertimos en imagen usando una API gratuita y segura
     const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(currentQR)}`;
     res.end(`
-      <html lang="es">
-        <head><title>Escanear QR - Bot WhatsApp</title></head>
-        <body style="text-align: center; font-family: Arial, sans-serif; background: #f0f2f5; padding-top: 50px;">
-          <h2>🤖 Escanea este código con tu WhatsApp</h2>
-          <p style="color: #555;">(Si la imagen no carga o no funciona, recarga la página F5)</p>
-          <div style="background: white; padding: 20px; display: inline-block; border-radius: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.1);">
-            <img src="${qrImageUrl}" alt="Código QR de WhatsApp" style="width: 300px; height: 300px;"/>
-          </div>
-        </body>
-      </html>
+      <body style="text-align: center; font-family: Arial; padding-top: 50px;">
+        <h2>🤖 Escanea este código</h2>
+        <img src="${qrImageUrl}" style="width: 300px; height: 300px;"/>
+      </body>
     `);
   } else {
-    // Si no hay QR (porque está arrancando o ya escaneaste)
     res.end(`
-      <html lang="es">
-        <head><title>Estado del Bot</title></head>
-        <body style="text-align: center; font-family: Arial, sans-serif; padding-top: 50px;">
-          <h2>Estado del Bot: <span style="color: #25D366;">${botStatus}</span></h2>
-          <p>Puedes cerrar esta pestaña cuando el bot esté READY.</p>
-        </body>
-      </html>
+      <body style="text-align: center; font-family: Arial; padding-top: 50px;">
+        <h2>Estado del Bot: <span style="color: #25D366;">${botStatus}</span></h2>
+      </body>
     `);
   }
 }).listen(port, () => {
