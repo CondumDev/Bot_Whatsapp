@@ -2,6 +2,7 @@ const { Client, LocalAuth } = require("whatsapp-web.js");
 const qrcode = require("qrcode-terminal");
 const axios = require("axios");
 require("dotenv").config();
+
 const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 puppeteer.use(StealthPlugin());
@@ -24,15 +25,23 @@ const client = new Client({
     }
 });
 
-const greetedUsers = new Set();
 const userMessageCounts = new Map();
 
+// --- NUEVAS VARIABLES PARA LA PÁGINA WEB ---
+let currentQR = "";
+let botStatus = "Iniciando navegador en la nube...";
+
 client.on("qr", (qr) => {
-  qrcode.generate(qr, { small: true });
+  currentQR = qr;
+  botStatus = "Esperando escaneo del QR";
+  console.log("¡Nuevo QR generado! Entra al enlace web de Render para escanearlo cómodamente.");
+  qrcode.generate(qr, { small: true }); // Lo dejamos en la terminal de Render por si acaso
 });
 
 client.on("authenticated", () => {
-  console.log("✅ ¡QR Escaneado! Autenticado correctamente. Sincronizando chats (esto puede tardar unos minutos)...");
+  currentQR = "";
+  botStatus = "¡Autenticado y conectado a WhatsApp!";
+  console.log("✅ ¡QR Escaneado! Autenticado correctamente.");
 });
 
 client.on("auth_failure", msg => {
@@ -40,6 +49,7 @@ client.on("auth_failure", msg => {
 });
 
 client.on("ready", () => {
+  botStatus = "¡Bot READY y funcionando al 100%!";
   console.log("🚀 ¡BOT READY Y ESCUCHANDO MENSAJES!");
 });
 
@@ -53,7 +63,7 @@ async function getGeminiResponse(messageText) {
             parts: [
               {
                 text:
-                  "Eres un bot de WhastApp creado por Guillermo López, pero tienes uso de razonamiento porque eres Gemini la AI de Google, ahora debes responder el siguiente mensaje que acabas de recibir (y debes decir del mensaje [Bot Gemini AI creador por Guillermo López] :" +
+                  "Eres un bot de WhatsApp creado por Guillermo López, pero tienes uso de razonamiento porque eres Gemini la AI de Google. Responde a esto (di primero que eres un Bot creado por Guillermo): " +
                   messageText,
               },
             ],
@@ -65,67 +75,45 @@ async function getGeminiResponse(messageText) {
         headers: { "Content-Type": "application/json" },
       }
     );
-
-    return (
-      response.data?.candidates?.[0]?.content?.parts?.[0]?.text.trim() ||
-      "No pude generar una respuesta. Inténtalo nuevamente."
-    );
+    return response.data?.candidates?.[0]?.content?.parts?.[0]?.text.trim() || "No pude generar una respuesta.";
   } catch (error) {
-    console.error(
-      "Error en la API de Gemini:",
-      error.response?.data || error.message
-    );
+    console.error("Error en Gemini:", error.message);
     return "Ocurrió un error al obtener una respuesta de la IA.";
   }
 }
 
 client.on("message_create", async (message) => {
-  const user = message.from;
   const messageText = message.body.toLowerCase().trim();
+  if (!messageText.startsWith("!gemini")) return; 
 
-  // 1. Filtrar: Solo continuamos si el mensaje empieza por "!gemini"
-  if (!messageText.startsWith("!gemini")) {
-    return; // Si no empieza por !gemini, el bot simplemente ignora el mensaje
-  }
-
-  // 2. Extraer la pregunta (quitamos los primeros 7 caracteres de "!gemini")
   const prompt = message.body.substring(7).trim();
-
-  // Si el usuario pone "!gemini" pero no escribe nada más
   if (!prompt) {
     await message.reply("Por favor, escribe una pregunta. Ejemplo: !gemini ¿De qué color es el cielo?");
     return;
   }
 
-  // 3. Sistema de conteo de mensajes (mantenemos tu lógica original)
+  const user = message.from;
   let userData = userMessageCounts.get(user);
   const now = Date.now();
 
   if (!userData) {
     userData = { count: 1, firstMessageTime: now };
   } else {
-    const timeElapsed = now - userData.firstMessageTime;
-    if (timeElapsed > 3600000) {
+    if (now - userData.firstMessageTime > 3600000) {
       userData.count = 1;
       userData.firstMessageTime = now;
     } else {
       userData.count += 1;
     }
   }
-
-  console.log("userData: ", userData);
   userMessageCounts.set(user, userData);
 
   if (userData.count > 15) {
-    await message.reply(
-      "Lo siento, alcanzaste el límite de preguntas por hora."
-    );
+    await message.reply("Lo siento, alcanzaste el límite de preguntas por hora.");
     return;
   }
 
-  // 4. Enviar la pregunta a Gemini
   try {
-    // IMPORTANTE: Pasamos 'prompt' en lugar de 'message.body' para no enviar la palabra "!gemini" a la IA
     const aiResponse = await getGeminiResponse(prompt);
     await message.reply(aiResponse);
   } catch (error) {
@@ -135,17 +123,45 @@ client.on("message_create", async (message) => {
 });
 
 console.log("⏳ Mandando la orden de abrir Chrome...");
-
 client.initialize()
   .then(() => console.log("✅ La orden de inicialización terminó correctamente."))
-  .catch(err => console.error("❌ Error crítico durante la inicialización:", err));
-// --- Servidor web fantasma para engañar a Render ---
+  .catch(err => console.error("❌ Error crítico:", err));
+
+
+// --- SERVIDOR WEB MEJORADO (Tu página web para el QR) ---
 const http = require('http');
 const port = process.env.PORT || 10000;
 
 http.createServer((req, res) => {
-  res.writeHead(200, { 'Content-Type': 'text/plain' });
-  res.end('Bot de WhatsApp funcionando correctamente.\n');
+  res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+  
+  if (currentQR) {
+    // Si hay un QR listo, lo convertimos en imagen usando una API gratuita y segura
+    const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(currentQR)}`;
+    res.end(`
+      <html lang="es">
+        <head><title>Escanear QR - Bot WhatsApp</title></head>
+        <body style="text-align: center; font-family: Arial, sans-serif; background: #f0f2f5; padding-top: 50px;">
+          <h2>🤖 Escanea este código con tu WhatsApp</h2>
+          <p style="color: #555;">(Si la imagen no carga o no funciona, recarga la página F5)</p>
+          <div style="background: white; padding: 20px; display: inline-block; border-radius: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.1);">
+            <img src="${qrImageUrl}" alt="Código QR de WhatsApp" style="width: 300px; height: 300px;"/>
+          </div>
+        </body>
+      </html>
+    `);
+  } else {
+    // Si no hay QR (porque está arrancando o ya escaneaste)
+    res.end(`
+      <html lang="es">
+        <head><title>Estado del Bot</title></head>
+        <body style="text-align: center; font-family: Arial, sans-serif; padding-top: 50px;">
+          <h2>Estado del Bot: <span style="color: #25D366;">${botStatus}</span></h2>
+          <p>Puedes cerrar esta pestaña cuando el bot esté READY.</p>
+        </body>
+      </html>
+    `);
+  }
 }).listen(port, () => {
-  console.log(`Servidor fantasma escuchando en el puerto ${port} para Render.`);
+  console.log(`Servidor web activo. Visita la URL de Render para ver el estado o el QR.`);
 });
